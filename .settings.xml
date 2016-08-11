@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+	<servers>
+		<server>
+			<id>fabric8-nexus</id>
+			<username>deployment</username>
+			<password>password</password>
+		</server>
+	</servers>
+	<profiles>
+		<profile>
+			<id>fabric8-nexus</id>
+			<activation>
+				<activeByDefault>true</activeByDefault>
+			</activation>
+			<repositories>
+				<repository>
+					<id>fabric8-snapshots-nexus</id>
+					<name>Fabric8 Nexus Test Repo</name>
+					<url>http://nexus.vagrant.f8</url>
+					<snapshots>
+						<enabled>true</enabled>
+					</snapshots>
+					<releases>
+						<enabled>true</enabled>
+					</releases>
+				</repository>
+			</repositories>
+		</profile>
+	</profiles>
+</settings>

@@ -8,9 +8,29 @@
     <artifactId>spring-bootch-scdf-stream</artifactId>
     <packaging>pom</packaging>
     <version>1.0-SNAPSHOT</version>
+
     <modules>
         <module>uppercase-processor</module>
     </modules>
 
+    <scm>
+        <connection>scm:git:git@github.com/donovanmuller/icodejava-spring-bootch-scdf-stream.git</connection>
+        <developerConnection>scm:git:ssh://github.com/donovanmuller/icodejava-spring-bootch-scdf-stream.git</developerConnection>
+        <url>https://github.com/donovanmuller/icodejava-spring-bootch-scdf-stream</url>
+        <tag>openshift</tag>
+    </scm>
+
+    <distributionManagement>
+        <repository>
+            <id>fabric8-nexus</id>
+            <name>Fabric8 Nexus Test Releases Repo</name>
+            <url>http://nexus.vagrant.f8/content/repositories/releases</url>
+        </repository>
+        <snapshotRepository>
+            <id>fabric8-nexus</id>
+            <name>Fabric8 Nexus Test Snapshots Repo</name>
+            <url>http://nexus.vagrant.f8/content/repositories/snapshots</url>
+        </snapshotRepository>
+    </distributionManagement>
 
 </project>

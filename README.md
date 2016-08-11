@@ -1,4 +1,4 @@
-# Spring Cloud Data Flow - Stream
+# Spring Cloud Data Flow - Stream (using OpenShift deploy server)
 
 This project is a demo from my I Code Java 2016 talk entitled "Stream is the new batch"
 
@@ -12,25 +12,105 @@ sink application where the message value is logged.
 
 See the SCDF [reference documentation](http://docs.spring.io/spring-cloud-dataflow/docs/1.0.0.RELEASE/reference/htmlsingle) for more information
 
+## OpenShift
+
+Instead of using the SCDF Local server, we will now use the OpenShift deployer server.
+This allows us to deploy our stream into an OpenShift environment as Docker containers.
+
+There are a few variants of OpenShift but we will be using the community edition: OpenShift Origin.
+For more information around OpenShift Origin, please visit [www.openshift.org](https://www.openshift.org)
+
+### Fabric8 Vagrant Box
+
+The easiest way to get a local OpenShift origin instance up and running is by using the Fabric8 Vagrant box.
+
+For more information on installing, running and configuring this instance, please see my blog post [here](http://blog.switchbit.io/spring-cloud-deployer-openshift/#localopenshiftinstance).
+
+### Nexus configuration
+
+In order for the OpenShift deployer server to resolve our apps we will use the provided Nexus
+instance. 
+
+Please configure Nexus as per my blog post [here](http://blog.switchbit.io/scdf-openshift-deploying-maven-artifacts-with-custom-dockerfile/#nexus).
+
+### Create `icodejava` project
+
+Now that you have a running OpenShift Origin environment and have configured Nexus, you'll need to create a new project
+to host our stream apps. To do this, SSH into the Vagrant VM and execute the following:
+
+```
+$ vagrant ssh
+[vagrant@vagrant vagrant]$ oc login
+Server [https://localhost:8443]:  
+The server uses a certificate signed by an unknown authority.  
+You can bypass the certificate check, but any data you send to the server could be intercepted by others.  
+Use insecure connections? (y/n): y
+
+Authentication required for https://localhost:8443 (openshift)  
+Username: admin  
+Password:  
+Login successful.
+
+You have access to the following projects and can switch between them with 'oc project <projectname>':
+
+  * default (current)
+  * openshift
+  * openshift-infra
+  * user-secrets-source-admin
+
+Using project "default".  
+Welcome! See 'oc help' to get started.
+
+[vagrant@vagrant vagrant]$ oc new-project icodejava --display-name="I Code Java" --description="I Code Java 2016 Demo"
+Now using project "icodejava" on server "https://localhost:8443".
+
+...
+```
+
+### Allow hostPath volume plugin
+
+For demonstration purposes we want to use a local persistent volume in the Vagrant VM.
+OpenShift provides a `hostPath` volume plugin for this, however, this plugin is [not allowed](https://docs.openshift.org/latest/admin_guide/manage_scc.html#use-the-hostpath-volume-plugin) 
+by default.
+
+To switch on support for it, execute the following:
+
+```
+[vagrant@vagrant ~]$ oc export scc anyuid | sed 's/allowHostDirVolumePlugin: false/allowHostDirVolumePlugin: true/g' | oc replace -f -
+securitycontextconstraints "anyuid" replaced
+```
+
 ## Kafka
 
-We will use the Kafka binder implementations of the apps, therefore we need a running Kafka broker.
-The simplest way to stand up a Kafka instance is to use the a Docker image:
+We will use the Kafka binder implementations of the apps, therefore we need a running Kafka broker available inside our `icodejava` project in OpenShift.
+
+Follow the steps [here](http://blog.switchbit.io/spring-cloud-deployer-openshift/#kafka) in my blog post.
+
+## Spring Cloud Data Flow OpenShift Server
+
+To stand up a SCDF OpenShift deployer server, follow the steps in my blog post [here](http://blog.switchbit.io/scdf-openshift-deploying-maven-artifacts-with-custom-dockerfile/#bootinguptheserver).
+, replacing the `spring.cloud.deployer.kubernetes.namespace` value accordingly.
+
+You should see something like the following:
 
 ```
-$ docker run -p 2181:2181 -p 9092:9092 --env ADVERTISED_HOST=`ipconfig getifaddr en0` --env ADVERTISED_PORT=9092 spotify/kafka
-```
-
-_Substitute `ipconfig getifaddr en0` where applicable_
-
-## Spring Cloud Data Flow Local Server
-
-The simplest way to run a SCDF server is using the Local variant, which will run apps locally.
-Stand a local server up by first downloading the server and then running it:
-
-```
-$ wget http://repo.spring.io/release/org/springframework/cloud/spring-cloud-dataflow-server-local/1.0.0.RELEASE/spring-cloud-dataflow-server-local-1.0.0.RELEASE.jar
-$ java -jar spring-cloud-dataflow-server-local-1.0.0.RELEASE.jar
+$ java -Dopenshift.url=https://172.28.128.4:8443 \
+    -Dkubernetes.master=https://172.28.128.4:8443 \
+    -Dkubernetes.trust.certificates=true \
+    -Dkubernetes.auth.basic.username=admin \
+    -Dkubernetes.auth.basic.password=admin \
+    -jar target/spring-cloud-dataflow-server-openshift-1.0.0.BUILD-SNAPSHOT.jar \
+    --spring.cloud.deployer.kubernetes.namespace=icodejava \
+    --maven.resolvePom=true \
+    --maven.remote-repositories.nexus.url=http://nexus.vagrant.f8/content/groups/public \
+    --maven.remote-repositories.nexus.auth.username=deployment \
+    --maven.remote-repositories.nexus.auth.password=password \
+    --maven.requestTimeout=1800000
+    
+...
+    
+...  INFO 56806 --- [           main] s.b.c.e.t.TomcatEmbeddedServletContainer : Tomcat started on port(s): 9393 (http)
+...  INFO 56806 --- [           main] o.s.c.d.s.k.OpenShiftDataFlowServer      : Started OpenShiftDataFlowServer in 9.963 seconds (JVM running for 10.462)
 ```
 
 ## Spring Cloud Data Flow Shell
@@ -59,30 +139,23 @@ dataflow:>app import --uri http://bit.ly/stream-applications-kafka-maven
 Successfully registered applications: [source.tcp, sink.jdbc, source.http, sink.rabbit, source.rabbit, source.ftp, sink.gpfdist, processor.transform, source.sftp, processor.filter, source.file, sink.cassandra, processor.groovy-filter, sink.router, source.trigger, sink.hdfs-dataset, processor.splitter, source.load-generator, processor.tcp-client, sink.file, source.time, source.gemfire, source.twitterstream, sink.tcp, source.jdbc, sink.field-value-counter, sink.redis-pubsub, sink.hdfs, processor.bridge, processor.pmml, processor.httpclient, sink.ftp, source.s3, sink.log, sink.gemfire, sink.aggregate-counter, sink.throughput, source.triggertask, sink.s3, source.gemfire-cq, source.jms, source.tcp-client, processor.scriptable-transform, sink.counter, sink.websocket, source.mongodb, source.mail, processor.groovy-transform, source.syslog]
 ```
 
-## Registering uppercase processor
+## Deploying and registering uppercase processor
+
+Before we can register our `uppercase` processor, we must deploy the Maven artifact to the Nexus repository.
+This is to enable OpenShift to create a Docker image through a `BuildConfig`. For more information around how this works, 
+please see [this section](http://blog.switchbit.io/scdf-openshift-deploying-maven-artifacts-with-custom-dockerfile/#customdockerfilebuilds) of my blog post.
+
+Deploy the built app into Nexus using the following command:
+
+```
+$ mvn -s .settings.xml deploy
+```
 
 Now we will register our custom `uppercase` processor:
 
 ```
 dataflow:>app register --name uppercase --uri "maven://i.code.java:uppercase-processor:1.0-SNAPSHOT" --type processor
 Successfully registered application 'processor:uppercase'
-```
-
-Notice the `maven://` coordinate, this means the SCDF server will resolve our app using Maven.
-This means we need to install our apps to our local Maven repo so that the server can find it:
-
-```
-$ ./mvnw install
-
-...
-
-[INFO] Reactor Summary:
-[INFO] 
-[INFO] spring-bootch-scdf-stream .......................... SUCCESS [  0.270 s]
-[INFO] uppercase-processor ................................ SUCCESS [  2.092 s]
-[INFO] ------------------------------------------------------------------------
-[INFO] BUILD SUCCESS
-[INFO] ------------------------------------------------------------------------
 ```
 
 ## Creating the stream definition
@@ -125,49 +198,7 @@ dataflow:>stream deploy --name uppercase
 Deployed stream 'uppercase'
 ```
 
-you should see something similar to the following in the SCDF server log:
-
-```
-...  INFO 45810 --- [nio-9393-exec-1] o.s.c.d.spi.local.LocalAppDeployer       : deploying app uppercase.log instance 0
-   Logs will be in /var/folders/79/c5g_bfkn74d_155b5cpl39q40000gn/T/spring-cloud-dataflow-1138593025964745788/uppercase-1470909360177/uppercase.log
-...  INFO 45810 --- [nio-9393-exec-1] o.s.c.d.spi.local.LocalAppDeployer       : deploying app uppercase.uppercase instance 0
-   Logs will be in /var/folders/79/c5g_bfkn74d_155b5cpl39q40000gn/T/spring-cloud-dataflow-1138593025964745788/uppercase-1470909360453/uppercase.uppercase
-...  INFO 45810 --- [nio-9393-exec-1] o.s.c.d.spi.local.LocalAppDeployer       : deploying app uppercase.file instance 0
-   Logs will be in /var/folders/79/c5g_bfkn74d_155b5cpl39q40000gn/T/spring-cloud-dataflow-1138593025964745788/uppercase-1470909361345/uppercase.file
-```
-
-all three apps in our stream are now deployed.
-
-Tail the logs of the `uppercase.log` instance so we can see the output once a file is processed:
-
-```
-$ tail -f /var/folders/79/c5g_bfkn74d_155b5cpl39q40000gn/T/spring-cloud-dataflow-1138593025964745788/uppercase-1470909360177/uppercase.log/stdout_0.log
-
-...
-
-...  INFO 49416 --- [           main] o.s.c.s.b.k.KafkaMessageChannelBinder$7  : started inbound.uppercase.uppercase.uppercase
-...  INFO 49416 --- [           main] o.s.c.support.DefaultLifecycleProcessor  : Starting beans in phase 0
-...  INFO 49416 --- [           main] o.s.c.support.DefaultLifecycleProcessor  : Starting beans in phase 2147482647
-...  INFO 49416 --- [           main] s.b.c.e.t.TomcatEmbeddedServletContainer : Tomcat started on port(s): 35764 (http)
-...  INFO 49416 --- [           main] o.s.c.s.a.l.s.k.LogSinkKafkaApplication  : Started LogSinkKafkaApplication in 13.112 seconds (JVM running for 13.745)
-```
-
-Now let's pop a file into the monitored `/tmp/icodejava/file` directory:
-
-```
-$ echo "i\ncode\njava\n2016" > /tmp/icodejava/file/input.txt
-```
-
-and we should see the following in the application log for the `log` sink app:
-
-```
-...
-
-...  INFO 49416 --- [ kafka-binder-1] log.sink                                 : I
-...  INFO 49416 --- [ kafka-binder-1] log.sink                                 : CODE
-...  INFO 49416 --- [ kafka-binder-1] log.sink                                 : JAVA
-...  INFO 49416 --- [ kafka-binder-1] log.sink                                 : 2016
-```
+_TODO_
 
 ## Conclusion
 
