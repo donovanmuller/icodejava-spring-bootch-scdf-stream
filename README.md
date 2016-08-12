@@ -12,6 +12,8 @@ sink application where the message value is logged.
 
 See the SCDF [reference documentation](http://docs.spring.io/spring-cloud-dataflow/docs/1.0.0.RELEASE/reference/htmlsingle) for more information
 
+*Please see the [`openshift`](https://github.com/donovanmuller/icodejava-spring-bootch-scdf-stream/tree/openshift) branch for the OpenShift demo*
+
 ## Kafka
 
 We will use the Kafka binder implementations of the apps, therefore we need a running Kafka broker.
