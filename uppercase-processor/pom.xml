@@ -13,6 +13,13 @@
     <artifactId>uppercase-processor</artifactId>
     <version>1.0-SNAPSHOT</version>
 
+    <scm>
+        <connection>scm:git:git@github.com/donovanmuller/icodejava-spring-bootch-scdf-stream.git</connection>
+        <developerConnection>scm:git:ssh://github.com/donovanmuller/icodejava-spring-bootch-scdf-stream.git</developerConnection>
+        <url>https://github.com/donovanmuller/icodejava-spring-bootch-scdf-stream</url>
+        <tag>openshift</tag>
+    </scm>
+
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -53,6 +60,12 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/docker</directory>
+            </resource>
+        </resources>
+
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

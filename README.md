@@ -73,11 +73,17 @@ For demonstration purposes we want to use a local persistent volume in the Vagra
 OpenShift provides a `hostPath` volume plugin for this, however, this plugin is [not allowed](https://docs.openshift.org/latest/admin_guide/manage_scc.html#use-the-hostpath-volume-plugin) 
 by default.
 
-To switch on support for it, execute the following:
+You will see the following event indicating this if you try and deploy a pod without explicitly allowing the plugin:
 
 ```
-[vagrant@vagrant ~]$ oc export scc anyuid | sed 's/allowHostDirVolumePlugin: false/allowHostDirVolumePlugin: true/g' | oc replace -f -
-securitycontextconstraints "anyuid" replaced
+... +0000 UTC   ... +0000 UTC   9         uppercase-uppercase-1          ReplicationController                                          Warning   FailedCreate                     {replication-controller }        Error creating: pods "uppercase-uppercase-1-" is forbidden: unable to validate against any security context constraint: [spec.containers[0].securityContext.volumes[0]: Invalid value: "hostPath": hostPath volumes are not allowed to be used spec.containers[0].securityContext.volumes[0]: Invalid value: "hostPath": hostPath volumes are not allowed to be used]
+```
+
+To switch on support for it, execute the following in the Vagrant VM:
+
+```
+[vagrant@vagrant ~]$ oc export scc restricted | sed 's/allowHostDirVolumePlugin: false/allowHostDirVolumePlugin: true/g' | oc replace -f -
+securitycontextconstraints "restricted" replaced
 ```
 
 ## Kafka
@@ -88,8 +94,8 @@ Follow the steps [here](http://blog.switchbit.io/spring-cloud-deployer-openshift
 
 ## Spring Cloud Data Flow OpenShift Server
 
-To stand up a SCDF OpenShift deployer server, follow the steps in my blog post [here](http://blog.switchbit.io/scdf-openshift-deploying-maven-artifacts-with-custom-dockerfile/#bootinguptheserver).
-, replacing the `spring.cloud.deployer.kubernetes.namespace` value accordingly.
+To stand up a SCDF OpenShift deployer server, follow the steps in my blog post [here](http://blog.switchbit.io/scdf-openshift-deploying-maven-artifacts-with-custom-dockerfile/#bootinguptheserver), 
+replacing the `spring.cloud.deployer.kubernetes.namespace` value accordingly.
 
 You should see something like the following:
 
@@ -135,7 +141,7 @@ We will use the out-of-the-box `file` source and `log` sink apps in our stream d
 Register these apps with the following:
 
 ```
-dataflow:>app import --uri http://bit.ly/stream-applications-kafka-maven
+dataflow:>app import --uri http://bit.ly/1-0-2-GA-stream-applications-kafka-maven
 Successfully registered applications: [source.tcp, sink.jdbc, source.http, sink.rabbit, source.rabbit, source.ftp, sink.gpfdist, processor.transform, source.sftp, processor.filter, source.file, sink.cassandra, processor.groovy-filter, sink.router, source.trigger, sink.hdfs-dataset, processor.splitter, source.load-generator, processor.tcp-client, sink.file, source.time, source.gemfire, source.twitterstream, sink.tcp, source.jdbc, sink.field-value-counter, sink.redis-pubsub, sink.hdfs, processor.bridge, processor.pmml, processor.httpclient, sink.ftp, source.s3, sink.log, sink.gemfire, sink.aggregate-counter, sink.throughput, source.triggertask, sink.s3, source.gemfire-cq, source.jms, source.tcp-client, processor.scriptable-transform, sink.counter, sink.websocket, source.mongodb, source.mail, processor.groovy-transform, source.syslog]
 ```
 
@@ -163,16 +169,20 @@ Successfully registered application 'processor:uppercase'
 Next we create the stream definition:
 
 ```
-dataflow:>stream create --name uppercase --definition "file --directory=/tmp/icodejava/file --mode=lines | uppercase | log"
+dataflow:>stream create --name uppercase --definition "file --directory=/tmp/icodejava --mode=lines | uppercase --spring.cloud.deployer.openshift.build.git.uri=https://github.com/donovanmuller/icodejava-spring-bootch-scdf-stream.git --spring.cloud.deployer.openshift.build.git.ref=openshift --spring.cloud.deployer.openshift.build.git.dockerfile=uppercase-processor/src/main/docker | log"
 Created new stream 'uppercase'
 ```
 
 Let's dissect this definition to understand what each app does:
 
-* `file --directory=/tmp/icodejava/file --mode=lines` - Use the OOTB `file` source app to monitor the 
-`/tmp/icodejava/file` directory for any files. Once a file is detected, split each line in the file into it's own
+* `file --directory=/tmp/icodejava --mode=lines` - Use the OOTB `file` source app to monitor the 
+`/tmp/icodejava` directory _inside the Docker container_ for any files. Once a file is detected, split each line in the file into it's own
 message, indicated by `--mode=lines`
-* `uppercase` - Run each message through the `uppercase` processor app, which, as the name suggests, uppercases each message value
+* `uppercase --spring.cloud.deployer.openshift.build.git.uri=https://github.com/donovanmuller/icodejava-spring-bootch-scdf-stream.git --spring.cloud.deployer.openshift.build.git.ref=openshift --spring.cloud.deployer.openshift.build.git.dockerfile=uppercase-processor/src/main/docker` - 
+Run each message through the `uppercase` processor app, which, as the name suggests, uppercase's each message value.
+The extra deployment properties inform OpenShift which remote Git repository to use, which branch on the repo and also the location of the `Dockerfile`.
+See [this section](http://blog.switchbit.io/scdf-openshift-deploying-maven-artifacts-with-custom-dockerfile/#customdockerfilebuilds) 
+in my blog post for more information.
 * `log` - Use the OOTB `log` sink application to simple log the received message (uppercase'd value) to the app log
 
 This is what the `uppercase-processor` looks like:
@@ -191,14 +201,38 @@ public class UppercaseProcessor {
 
 ## Deploy and test the stream
 
-Now we can deploy our stream:
+Now we can deploy our stream to OpenShift:
 
 ```
 dataflow:>stream deploy --name uppercase
 Deployed stream 'uppercase'
 ```
 
-_TODO_
+OpenShift will now create `BuildConfig`'s for each of the apps and once the build is completed, will deploy the stream containers.
+You should see something similar to this:
+
+![uppercase stream depoyed on OpenShift](/docs/images/uppercase-stream-openshift.png)
+
+To test it we will "drop" a file into the `/vagrant/icodejava` directory inside our Vagrant VM, which is mounted inside the
+`file` source container to `/tmp/icodejava`.
+Note that the `/vagrant` directory inside the VM is shared to the location of the `Vagrantfile` on your local machine.
+So to drop a file, we can just do this on our local machine:
+
+```
+$ echo "i\ncode\njava\n2016" > <location of your Vagrantfile>/input.txt
+```
+
+> Alternatively, you can drop the file inside the Vagrant VM in the `/vagrant/icodejava` directory.
+However, make sure to use `printf` instead of `echo`, as the newline is not correctly interpreted.
+I.e. `printf "i\ncode\njava\n2016" > /vagrant/icodejava/input.txt`
+
+If you view the logs of the `log` sink app, you should see the expected output:
+
+![log sink app log](/docs/images/log-sink-log.png)
+
+Note how we didn't have to change any functionality to deploy our stream into OpenShift.
+This is one of the most powerful concepts in SCDF, being able to compose and deploy a stream
+onto multiple environments without leaking environment configuration into the application source.
 
 ## Conclusion
 

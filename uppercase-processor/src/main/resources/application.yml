@@ -1,5 +1,1 @@
 logging.level.i.code.java: debug
-
-spring:
-  main:
-    web-environment: false
